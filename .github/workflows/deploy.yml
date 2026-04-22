@@ -1,0 +1,39 @@
+name: Deploy to FastComet
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy-pet-store:
+    name: Deploy Pet Store
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: FTP Deploy
+      uses: SamKirkland/FTP-Deploy-Action@4.3.3
+      with:
+        server: ${{ secrets.FTP_SERVER }}
+        username: ${{ secrets.FTP_USERNAME }}
+        password: ${{ secrets.FTP_PASSWORD }}
+        local-dir: ./niches/pet/
+        server-dir: /public_html/pet-store/ # Adjust if your path is different
+
+  deploy-auto-store:
+    name: Deploy Auto Store
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: FTP Deploy
+      uses: SamKirkland/FTP-Deploy-Action@4.3.3
+      with:
+        server: ${{ secrets.FTP_SERVER }}
+        username: ${{ secrets.FTP_USERNAME }}
+        password: ${{ secrets.FTP_PASSWORD }}
+        local-dir: ./niches/auto/
+        server-dir: /public_html/auto-store/ # Adjust if your path is different

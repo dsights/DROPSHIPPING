@@ -1,0 +1,27 @@
+# ── Secrets — NEVER commit these ──────────────────────
+config.json
+*.sql
+*.env
+.env*
+
+# ── Runtime ────────────────────────────────────────────
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# ── Logs & DB ──────────────────────────────────────────
+logs/
+db/
+reports/
+
+# ── AI-generated content (pushed separately via sync.sh)
+niches/*/wp-content/ai-content/
+
+# ── SSH keys ───────────────────────────────────────────
+*.pem
+*.rsa
+*_rsa
+*_rsa.pub
