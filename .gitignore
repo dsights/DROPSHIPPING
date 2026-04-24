@@ -1,10 +1,9 @@
-# ── Secrets — NEVER commit these ──────────────────────
+# ── Secrets — NEVER commit ─────────────────────────────
 config.json
-*.sql
 *.env
 .env*
 
-# ── Runtime ────────────────────────────────────────────
+# ── Runtime / venv ──────────────────────────────────────
 venv/
 __pycache__/
 *.pyc
@@ -12,16 +11,26 @@ __pycache__/
 *.pyd
 .Python
 
-# ── Logs & DB ──────────────────────────────────────────
+# ── Logs, DB exports, reports ──────────────────────────
 logs/
 db/
 reports/
 
-# ── AI-generated content (pushed separately via sync.sh)
+# ── WordPress: do NOT commit these from niches/ ─────────
+# (too large, runtime-generated, or sensitive)
+niches/*/wp-content/cache/
+niches/*/wp-content/upgrade/
 niches/*/wp-content/ai-content/
+niches/*/wp-content/uploads/
+niches/*/wp-content/ai1wm-backups/
+niches/*/wp-content/*.log
+niches/*/wp-content/wp-cache-config.php
+niches/*/wp-content/advanced-cache.php
+niches/*/wp-content/advanced-headers.php
 
-# ── SSH keys ───────────────────────────────────────────
+# Commit themes, plugins, mu-plugins, languages, SQL — everything else in niches/
+
+# ── SSH keys ────────────────────────────────────────────
 *.pem
-*.rsa
 *_rsa
 *_rsa.pub

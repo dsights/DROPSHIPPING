@@ -1,39 +1,66 @@
 name: Deploy to FastComet
 
+# Fires on every push to main (triggered by sync.sh)
 on:
   push:
     branches:
       - main
 
 jobs:
+  # ── Furlio — Pet Store ──────────────────────────────────────────────────────
   deploy-pet-store:
-    name: Deploy Pet Store
+    name: Deploy Furlio (Pet)
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: FTP Deploy
-      uses: SamKirkland/FTP-Deploy-Action@4.3.3
-      with:
-        server: ${{ secrets.FTP_SERVER }}
-        username: ${{ secrets.FTP_USERNAME }}
-        password: ${{ secrets.FTP_PASSWORD }}
-        local-dir: ./niches/pet/
-        server-dir: /public_html/pet-store/ # Adjust if your path is different
+      - name: FTP Deploy — wp-content
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server:    ${{ secrets.PET_FTP_SERVER }}
+          username:  ${{ secrets.PET_FTP_USERNAME }}
+          password:  ${{ secrets.PET_FTP_PASSWORD }}
+          port:      21
+          local-dir: ./niches/pet/wp-content/
+          # PET_FTP_REMOTE_DIR = the wp-content folder on FastComet for furlio.au
+          # e.g.  /public_html/wp-content/         (main domain)
+          #       /public_html/furlio.au/wp-content/ (addon domain)
+          server-dir: ${{ secrets.PET_FTP_REMOTE_DIR }}
+          dangerous-clean-slate: false
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/cache/**
+            **/upgrade/**
+            **/uploads/**
+            **/ai-content/**
+            **/*.log
 
+  # ── LetsDrive — Auto Store ──────────────────────────────────────────────────
   deploy-auto-store:
-    name: Deploy Auto Store
+    name: Deploy LetsDrive (Auto)
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: FTP Deploy
-      uses: SamKirkland/FTP-Deploy-Action@4.3.3
-      with:
-        server: ${{ secrets.FTP_SERVER }}
-        username: ${{ secrets.FTP_USERNAME }}
-        password: ${{ secrets.FTP_PASSWORD }}
-        local-dir: ./niches/auto/
-        server-dir: /public_html/auto-store/ # Adjust if your path is different
+      - name: FTP Deploy — wp-content
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server:    ${{ secrets.AUTO_FTP_SERVER }}
+          username:  ${{ secrets.AUTO_FTP_USERNAME }}
+          password:  ${{ secrets.AUTO_FTP_PASSWORD }}
+          port:      21
+          local-dir: ./niches/auto/wp-content/
+          # AUTO_FTP_REMOTE_DIR = the wp-content folder on FastComet for letsdrive.au
+          server-dir: ${{ secrets.AUTO_FTP_REMOTE_DIR }}
+          dangerous-clean-slate: false
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/cache/**
+            **/upgrade/**
+            **/uploads/**
+            **/ai-content/**
+            **/*.log

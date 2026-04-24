@@ -1,7 +1,16 @@
 #!/usr/bin/env bash
 # ============================================================
-# Zero-Click Sync Engine
-# Pipeline: Local WP → GitHub → FastComet (live)
+# Sync Engine — Local WP → niches/ → GitHub → FastComet
+#
+# How it works:
+#   1. Copies wp-content (themes, plugins, mu-plugins) from
+#      /var/www/html/{niche}/ into niches/{niche}/
+#   2. Exports DB with URL search-replace (local → live)
+#   3. git add + commit + push to main
+#   4. GitHub Actions FTP deploy fires automatically
+#
+# No SSH keys or FastComet credentials needed here.
+# FastComet deployment is handled entirely by GitHub Actions.
 # ============================================================
 set -euo pipefail
 
@@ -10,278 +19,174 @@ ROOT="$(dirname "$SCRIPT_DIR")"
 CONFIG="$ROOT/config.json"
 LOG_DIR="$ROOT/logs"
 LOG_FILE="$LOG_DIR/sync_$(date +%F).log"
-TIMESTAMP=$(date +"%Y-%m-%d %H:%M:%S")
+PYTHON="$ROOT/venv/bin/python3"
 
 mkdir -p "$LOG_DIR"
+log()  { echo "[$(date +%T)][SYNC] $*" | tee -a "$LOG_FILE"; }
+err()  { echo "[$(date +%T)][SYNC][ERROR] $*" | tee -a "$LOG_FILE" >&2; }
+die()  { err "$*"; exit 1; }
 
-log() { echo "[$TIMESTAMP][SYNC] $*" | tee -a "$LOG_FILE"; }
-err() { echo "[$TIMESTAMP][SYNC][ERROR] $*" | tee -a "$LOG_FILE" >&2; }
-die() { err "$*"; exit 1; }
-
-# ── Read config via Python (jq-free) ────────────────────────────────────────
 cfg() {
-    python3 -c "
-import json, sys
+    "$PYTHON" -c "
+import json
 with open('$CONFIG') as f: c=json.load(f)
 keys='$1'.split('.')
 v=c
-for k in keys:
-    v=v[k]
+for k in keys: v=v[k]
 print(v)
 " 2>/dev/null || echo ""
 }
 
 niche_cfg() {
-    python3 -c "
-import json, sys
+    "$PYTHON" -c "
+import json
 with open('$CONFIG') as f: c=json.load(f)
 niche,key='$1'.split('.',1)
 keys=key.split('.')
 v=c['niches'][niche]
-for k in keys:
-    v=v[k]
+for k in keys: v=v[k]
 print(v)
 " 2>/dev/null || echo ""
 }
 
-# ── Git Push ──────────────────────────────────────────────────────────────────
-git_push() {
+# ── Step 1: Copy wp-content into niches/ ─────────────────────────────────────
+copy_wp_content() {
     local niche="$1"
-    local local_path
-    local_path=$(niche_cfg "${niche}.local_wp_path")
+    local src
+    local dst
 
-    log "Git push for niche: $niche (path: $local_path)"
+    src=$(niche_cfg "${niche}.wp_content_path")    # /var/www/html/pet/wp-content
+    dst="$ROOT/niches/${niche}/wp-content"
 
-    cd "$local_path" || die "Cannot cd to $local_path"
+    [ -d "$src" ] || die "wp-content not found at $src"
+    mkdir -p "$dst"
 
-    if [ ! -d ".git" ]; then
-        git init
-        git remote add origin "$(cfg 'github.repo_url')" 2>/dev/null || true
-        log "Initialized git repo in $local_path"
-    fi
+    log "Copying wp-content for $niche: $src → $dst"
 
-    # Stage everything except secrets
-    git add -A
-    git status --short | head -20 | tee -a "$LOG_FILE"
+    rsync -a --delete \
+        --exclude="cache/" \
+        --exclude="upgrade/" \
+        --exclude="ai-content/" \
+        --exclude="uploads/" \
+        --exclude="ai1wm-backups/" \
+        --exclude="*.log" \
+        --exclude="wp-cache-config.php" \
+        --exclude="advanced-cache.php" \
+        --exclude="advanced-headers.php" \
+        "$src/" "$dst/" \
+        2>&1 | tee -a "$LOG_FILE" \
+        || die "rsync of wp-content failed for $niche"
 
-    if git diff --cached --quiet; then
-        log "No changes to commit for $niche"
-        return 0
-    fi
-
-    git commit -m "Auto-deploy: $niche products $(date +%F-%H%M)" \
-        --author="Dropship Bot <bot@localhost>" \
-        || { err "Git commit failed for $niche"; return 1; }
-
-    git push origin "$(cfg 'github.branch')" \
-        || { err "Git push failed for $niche"; return 1; }
-
-    log "Git push complete for $niche"
-    cd "$ROOT"
+    log "wp-content copy done for $niche"
 }
 
-# ── DB Export with URL Search-Replace ────────────────────────────────────────
-db_export() {
+# ── Step 2: Export DB with URL search-replace ──────────────────────────────────
+export_db() {
     local niche="$1"
-    local local_path
-    local local_url
-    local live_url
-    local dump_file
+    local local_path local_url live_url dump_file
 
     local_path=$(niche_cfg "${niche}.local_wp_path")
     local_url=$(niche_cfg "${niche}.wp_url_local")
     live_url=$(niche_cfg "${niche}.wp_url_live")
-    dump_file="$ROOT/db/${niche}_$(date +%F).sql"
+    dump_file="$ROOT/niches/${niche}/${niche}-store.sql"
 
-    log "Exporting DB for $niche: $local_url → $live_url"
+    log "Exporting DB for $niche (${local_url} → ${live_url})"
 
-    # Export local DB
     wp db export "$dump_file" \
         --path="$local_path" \
         --allow-root \
         --quiet \
-        || die "wp db export failed for $niche"
+        || { err "wp db export failed for $niche"; return 1; }
 
-    # Search-replace local URL with live URL
-    wp search-replace "$local_url" "$live_url" \
-        --path="$local_path" \
-        --export="$dump_file" \
-        --allow-root \
-        --quiet \
-        2>/dev/null || {
-            # Fallback: sed-based replace
-            sed -i "s|${local_url}|${live_url}|g" "$dump_file"
-            log "Used sed fallback for URL replacement"
-        }
+    # URL search-replace in the dump
+    if wp search-replace "$local_url" "$live_url" \
+            --path="$local_path" \
+            --export="$dump_file" \
+            --allow-root \
+            --quiet 2>/dev/null; then
+        log "URL search-replace done (wp-cli)"
+    else
+        sed -i "s|${local_url}|${live_url}|g" "$dump_file"
+        log "URL search-replace done (sed fallback)"
+    fi
 
-    log "DB exported and URL-replaced: $dump_file"
-    echo "$dump_file"
+    log "DB exported: $dump_file"
 }
 
-# ── Rsync Media ───────────────────────────────────────────────────────────────
-rsync_media() {
-    local niche="$1"
-    local local_uploads
-    local remote_host
-    local remote_user
-    local remote_port
-    local ssh_key
-    local remote_path
+# ── Step 3: Git add + commit + push ──────────────────────────────────────────
+git_push() {
+    local branch
+    branch=$(cfg "github.branch")
+    branch="${branch:-main}"
 
-    local_uploads=$(niche_cfg "${niche}.wp_content_path")/uploads
-    remote_host=$(niche_cfg "${niche}.fastcomet.host")
-    remote_user=$(niche_cfg "${niche}.fastcomet.user")
-    remote_port=$(niche_cfg "${niche}.fastcomet.port")
-    ssh_key=$(niche_cfg "${niche}.fastcomet.ssh_key")
-    remote_path=$(niche_cfg "${niche}.fastcomet.remote_wp_path")
+    log "Staging changes for git..."
+    cd "$ROOT"
 
-    log "Rsyncing media for $niche to $remote_user@$remote_host:$remote_port"
+    # Stage niches/ directory (themes, plugins, mu-plugins, SQL)
+    git add niches/
 
-    rsync -avz --progress \
-        -e "ssh -p $remote_port -i $ssh_key -o StrictHostKeyChecking=no -o BatchMode=yes" \
-        "$local_uploads/" \
-        "$remote_user@$remote_host:$remote_path/wp-content/uploads/" \
-        2>&1 | tail -5 | tee -a "$LOG_FILE" \
-        || { err "rsync failed for $niche"; return 1; }
+    # Stage any _common script changes, CRONTAB, STATUS updates
+    git add _common/ CRONTAB.md STATUS.md 2>/dev/null || true
 
-    log "Media rsync complete for $niche"
+    if git diff --cached --quiet; then
+        log "Nothing new to commit — skipping push"
+        return 0
+    fi
+
+    local msg="Auto-deploy: wp-content + db export $(date +%F-%H%M)"
+    git commit -m "$msg" --author="CEO Bot <ceo@dropship.local>" \
+        || die "git commit failed"
+
+    git push origin "$branch" \
+        || die "git push failed — check SSH key or GitHub remote"
+
+    log "Pushed to GitHub ($branch) — GitHub Actions will FTP deploy to FastComet"
 }
 
-# ── Remote DB Import ─────────────────────────────────────────────────────────
-db_import_remote() {
-    local niche="$1"
-    local dump_file="$2"
-    local remote_host
-    local remote_user
-    local remote_port
-    local ssh_key
-    local remote_path
-    local db_name
-    local db_user
-    local db_pass
-
-    remote_host=$(niche_cfg "${niche}.fastcomet.host")
-    remote_user=$(niche_cfg "${niche}.fastcomet.user")
-    remote_port=$(niche_cfg "${niche}.fastcomet.port")
-    ssh_key=$(niche_cfg "${niche}.fastcomet.ssh_key")
-    remote_path=$(niche_cfg "${niche}.fastcomet.remote_wp_path")
-    db_name=$(niche_cfg "${niche}.fastcomet.remote_db_name")
-    db_user=$(niche_cfg "${niche}.fastcomet.remote_db_user")
-    db_pass=$(niche_cfg "${niche}.fastcomet.remote_db_pass")
-
-    log "Importing DB remotely for $niche on $remote_host"
-
-    # Upload dump to remote temp dir
-    scp -P "$remote_port" -i "$ssh_key" \
-        -o StrictHostKeyChecking=no \
-        -o BatchMode=yes \
-        "$dump_file" \
-        "$remote_user@$remote_host:/tmp/${niche}_import.sql" \
-        || die "SCP of DB dump failed for $niche"
-
-    # Import via WP-CLI on remote
-    ssh -p "$remote_port" -i "$ssh_key" \
-        -o StrictHostKeyChecking=no \
-        -o BatchMode=yes \
-        "$remote_user@$remote_host" \
-        "wp db import /tmp/${niche}_import.sql --path='$remote_path' --allow-root && \
-         wp cache flush --path='$remote_path' --allow-root && \
-         rm -f /tmp/${niche}_import.sql && \
-         echo 'DB import + cache flush done for $niche'" \
-        2>&1 | tee -a "$LOG_FILE" \
-        || die "Remote DB import failed for $niche"
-
-    log "Remote DB import complete for $niche"
-}
-
-# ── Plugins + Theme Sync ─────────────────────────────────────────────────────
-rsync_plugins_themes() {
-    local niche="$1"
-    local local_path
-    local remote_host
-    local remote_user
-    local remote_port
-    local ssh_key
-    local remote_path
-
-    local_path=$(niche_cfg "${niche}.wp_content_path")
-    remote_host=$(niche_cfg "${niche}.fastcomet.host")
-    remote_user=$(niche_cfg "${niche}.fastcomet.user")
-    remote_port=$(niche_cfg "${niche}.fastcomet.port")
-    ssh_key=$(niche_cfg "${niche}.fastcomet.ssh_key")
-    remote_path=$(niche_cfg "${niche}.fastcomet.remote_wp_path")
-
-    for dir in plugins themes; do
-        if [ -d "$local_path/$dir" ]; then
-            log "Syncing $dir for $niche"
-            rsync -az --delete \
-                -e "ssh -p $remote_port -i $ssh_key -o StrictHostKeyChecking=no -o BatchMode=yes" \
-                "$local_path/$dir/" \
-                "$remote_user@$remote_host:$remote_path/wp-content/$dir/" \
-                2>&1 | tail -3 | tee -a "$LOG_FILE" \
-                || log "Warning: $dir rsync had issues for $niche"
-        fi
-    done
-}
-
-# ── Process Single Niche ──────────────────────────────────────────────────────
+# ── Sync one niche ────────────────────────────────────────────────────────────
 sync_niche() {
     local niche="$1"
     local enabled
     enabled=$(niche_cfg "${niche}.enabled")
 
     if [ "$enabled" != "True" ] && [ "$enabled" != "true" ] && [ "$enabled" != "1" ]; then
-        log "Niche '$niche' disabled — skipping sync"
+        log "Niche '$niche' disabled — skipping"
         return 0
     fi
 
-    log "====== Syncing niche: $niche ======"
-
-    # Step 1: Git push
-    git_push "$niche" || log "Warning: Git push failed, continuing..."
-
-    # Step 2: Export + URL replace DB
-    dump_file=$(db_export "$niche")
-
-    # Step 3: Rsync media
-    rsync_media "$niche" || log "Warning: Media rsync failed, continuing..."
-
-    # Step 4: Sync plugins/themes
-    rsync_plugins_themes "$niche" || log "Warning: Plugin/theme rsync had issues, continuing..."
-
-    # Step 5: Remote DB import
-    db_import_remote "$niche" "$dump_file"
-
-    log "====== Sync complete for $niche ======"
+    log "====== Syncing: $niche ======"
+    copy_wp_content "$niche" || { err "wp-content copy failed for $niche"; return 1; }
+    export_db "$niche" || err "DB export failed for $niche — continuing"
+    log "====== $niche ready for git push ======"
 }
 
-# ── Entry Point ───────────────────────────────────────────────────────────────
+# ── Main ──────────────────────────────────────────────────────────────────────
 main() {
-    log "=== Zero-Click Sync Engine Starting ==="
+    log "=== Sync Engine Starting ==="
 
-    # Get list of enabled niches
-    niches=$(python3 -c "
+    local niches
+    niches=$("$PYTHON" -c "
 import json
 with open('$CONFIG') as f: c=json.load(f)
 print(' '.join(k for k,v in c['niches'].items() if v.get('enabled', True)))
 ")
 
-    if [ -z "$niches" ]; then
-        die "No enabled niches found in config.json"
-    fi
-
-    log "Niches to sync: $niches"
+    [ -n "$niches" ] || die "No enabled niches in config.json"
+    log "Niches: $niches"
 
     for niche in $niches; do
-        sync_niche "$niche" || err "Sync failed for $niche — continuing with next"
+        sync_niche "$niche" || err "Sync failed for $niche — continuing"
     done
 
-    log "=== All niches synced successfully ==="
+    # Single git push after all niches are staged
+    git_push
+
+    log "=== Sync complete — GitHub Actions will deploy to FastComet ==="
 }
 
-# Allow running a single niche: ./sync.sh pet
 if [ $# -eq 1 ]; then
     sync_niche "$1"
+    git_push
 else
     main
 fi
