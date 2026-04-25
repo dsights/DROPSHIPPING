@@ -3,6 +3,14 @@ config.json
 *.env
 .env*
 
+# ── Claude Code tool settings (dev-machine-specific) ───
+.claude/
+
+# ── Raw SQL dumps in repo root (non-URL-replaced) ──────
+# Use niches/{niche}/{niche}-store.sql (URL-replaced) instead
+/pet-store.sql
+/auto-store.sql
+
 # ── Runtime / venv ──────────────────────────────────────
 venv/
 __pycache__/

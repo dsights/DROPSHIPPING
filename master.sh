@@ -4,6 +4,7 @@
 # Runs all phases for all niches sequentially.
 # Triggered by crontab at 04:00 AEST daily.
 # ============================================================
+[ -n "${BASH_VERSION:-}" ] || exec bash "$0" "$@"
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

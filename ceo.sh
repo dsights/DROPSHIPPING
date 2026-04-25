@@ -4,12 +4,14 @@
 # Run this daily (or let cron handle it at 04:00 AEST).
 #
 # Usage:
-#   ./ceo.sh                   Full daily CEO run (all niches)
-#   ./ceo.sh --dry-run         Plan + competitor analysis, no scout/hype execution
-#   ./ceo.sh --niche pet       Focus on Furlio only
-#   ./ceo.sh --niche auto      Focus on LetsDrive only
-#   ./ceo.sh --brief-only      Send today's briefing without running tasks
+#   bash ceo.sh                Full daily CEO run (all niches)
+#   bash ceo.sh --dry-run      Plan + competitor analysis, no scout/hype execution
+#   bash ceo.sh --niche pet    Focus on Furlio only
+#   bash ceo.sh --niche auto   Focus on LetsDrive only
+#   bash ceo.sh --brief-only   Send today's briefing without running tasks
 # ==============================================================
+# Ensure this runs under bash, not dash/sh (set -o pipefail is bash-only)
+[ -n "${BASH_VERSION:-}" ] || exec bash "$0" "$@"
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

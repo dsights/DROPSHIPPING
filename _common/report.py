@@ -45,23 +45,23 @@ def fetch_woo_sales(niche_cfg: dict) -> dict:
 
     try:
         resp = httpx.get(
-            api_url(base_url, "/wc/v3/reports/sales"),
+            api_url(base_url, f"/wc/v3/orders&after={YESTERDAY}T00:00:00&before={TODAY}T23:59:59&per_page=100&status=completed,processing"),
             auth=(ck, cs),
-            params={
-                "date_min": YESTERDAY,
-                "date_max": TODAY,
-                "period": "custom",
-            },
             timeout=15,
         )
         resp.raise_for_status()
-        data = resp.json()
-        if isinstance(data, list) and data:
+        orders = resp.json()
+        if isinstance(orders, list):
+            total_sales = sum(float(o.get("total", 0)) for o in orders)
+            total_items = sum(
+                sum(int(li.get("quantity", 0)) for li in o.get("line_items", []))
+                for o in orders
+            )
             return {
-                "total_sales": float(data[0].get("total_sales", 0)),
-                "net_revenue": float(data[0].get("net_revenue", 0)),
-                "total_orders": int(data[0].get("total_orders", 0)),
-                "total_items": int(data[0].get("total_items", 0)),
+                "total_sales": total_sales,
+                "net_revenue": total_sales,
+                "total_orders": len(orders),
+                "total_items": total_items,
             }
     except Exception as e:
         log.warning(f"WooCommerce sales fetch failed for {niche_cfg['store_name']}: {e}")

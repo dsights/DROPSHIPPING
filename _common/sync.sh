@@ -12,6 +12,7 @@
 # No SSH keys or FastComet credentials needed here.
 # FastComet deployment is handled entirely by GitHub Actions.
 # ============================================================
+[ -n "${BASH_VERSION:-}" ] || exec bash "$0" "$@"
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

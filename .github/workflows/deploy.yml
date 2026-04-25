@@ -1,33 +1,93 @@
 name: Deploy to FastComet
 
-# Fires on every push to main (triggered by sync.sh)
+# Triggers:
+#   1. Auto: every push to main that changes store files
+#   2. Manual: GitHub UI → Actions → "Deploy to FastComet" → Run workflow
 on:
   push:
-    branches:
-      - main
+    branches: [main]
+    paths:
+      - 'niches/**'
+      - '_common/**'
+      - '.github/workflows/**'
+  workflow_dispatch:
+    inputs:
+      store:
+        description: 'Store to deploy'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - pet
+          - auto
+      include_db:
+        description: 'Import database? WARNING — overwrites live DB. Only use for first deploy.'
+        required: true
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Required GitHub Secrets (set at: repo → Settings → Secrets → Actions):
+#
+#   FTP_SERVER              FastComet FTP hostname (e.g. server123.fastcomet.net)
+#   FTP_USERNAME            cPanel/FTP username    (e.g. tripxen1)
+#   FTP_PASSWORD            cPanel/FTP password
+#
+#   PET_FTP_REMOTE_DIR      Remote path to pet wp-content (FTP-root-relative)
+#                           e.g.  /public_html/wp-content/
+#                              or /dropshipping/public_html/pet-store/wp-content/
+#   AUTO_FTP_REMOTE_DIR     Same for auto store
+#                           e.g.  /dropshipping/public_html/auto-store/wp-content/
+#
+#   PET_FTP_SQL_DIR         Remote path to pet store ROOT (for SQL upload)
+#                           e.g.  /dropshipping/public_html/pet-store/
+#   AUTO_FTP_SQL_DIR        Same for auto store
+#
+#   FASTCOMET_SSH_HOST      SSH hostname (same server as FTP)
+#   FASTCOMET_SSH_USER      SSH username (same as FTP username)
+#   FASTCOMET_SSH_KEY       SSH private key content (generate with ssh-keygen)
+#   FASTCOMET_SSH_PORT      SSH port — try 22 first, fall back to 21098
+#
+#   PET_STORE_PATH          Absolute path on server: /home/tripxen1/dropshipping/public_html/pet-store
+#   AUTO_STORE_PATH         Absolute path on server: /home/tripxen1/dropshipping/public_html/auto-store
+#
+#   PET_DB_NAME             tripxen1_petdb
+#   PET_DB_USER             tripxen1_petuser
+#   PET_DB_PASS             DB password for pet store
+#   AUTO_DB_NAME            tripxen1_autodb
+#   AUTO_DB_USER            tripxen1_autouser
+#   AUTO_DB_PASS            DB password for auto store
+# ─────────────────────────────────────────────────────────────────────────────
 
 jobs:
   # ── Furlio — Pet Store ──────────────────────────────────────────────────────
-  deploy-pet-store:
-    name: Deploy Furlio (Pet)
+  deploy-pet:
+    name: Deploy Furlio (pet)
     runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' &&
+       (github.event.inputs.store == 'all' || github.event.inputs.store == 'pet'))
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: FTP Deploy — wp-content
+      - name: FTP — wp-content (themes, plugins, mu-plugins)
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
-          server:    ${{ secrets.PET_FTP_SERVER }}
-          username:  ${{ secrets.PET_FTP_USERNAME }}
-          password:  ${{ secrets.PET_FTP_PASSWORD }}
+          server:    ${{ secrets.FTP_SERVER }}
+          username:  ${{ secrets.FTP_USERNAME }}
+          password:  ${{ secrets.FTP_PASSWORD }}
           port:      21
           local-dir: ./niches/pet/wp-content/
-          # PET_FTP_REMOTE_DIR = the wp-content folder on FastComet for furlio.au
-          # e.g.  /public_html/wp-content/         (main domain)
-          #       /public_html/furlio.au/wp-content/ (addon domain)
           server-dir: ${{ secrets.PET_FTP_REMOTE_DIR }}
           dangerous-clean-slate: false
+          log-level: standard
           exclude: |
             **/.git*
             **/.git*/**
@@ -35,27 +95,75 @@ jobs:
             **/upgrade/**
             **/uploads/**
             **/ai-content/**
+            **/ai1wm-backups/**
             **/*.log
+            **/wp-cache-config.php
+            **/advanced-cache.php
+
+      - name: FTP — SQL dump (only when include_db=true)
+        if: github.event.inputs.include_db == 'true'
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server:    ${{ secrets.FTP_SERVER }}
+          username:  ${{ secrets.FTP_USERNAME }}
+          password:  ${{ secrets.FTP_PASSWORD }}
+          port:      21
+          local-dir: ./niches/pet/
+          server-dir: ${{ secrets.PET_FTP_SQL_DIR }}
+          dangerous-clean-slate: false
+          exclude: |
+            **/.git*/**
+            **/wp-content/**
+
+      - name: SSH — Import DB + flush cache (only when include_db=true)
+        if: github.event.inputs.include_db == 'true'
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host:     ${{ secrets.FASTCOMET_SSH_HOST }}
+          username: ${{ secrets.FASTCOMET_SSH_USER }}
+          key:      ${{ secrets.FASTCOMET_SSH_KEY }}
+          port:     ${{ secrets.FASTCOMET_SSH_PORT }}
+          script: |
+            set -e
+            cd "${{ secrets.PET_STORE_PATH }}"
+
+            echo "=== Importing pet DB ==="
+            mysql \
+              -u"${{ secrets.PET_DB_USER }}" \
+              -p"${{ secrets.PET_DB_PASS }}" \
+              "${{ secrets.PET_DB_NAME }}" \
+              < pet-store.sql
+
+            echo "=== Flushing WP cache ==="
+            if command -v wp &>/dev/null; then
+              wp cache flush --allow-root 2>/dev/null || true
+            fi
+            echo "=== Pet DB import complete ==="
 
   # ── LetsDrive — Auto Store ──────────────────────────────────────────────────
-  deploy-auto-store:
-    name: Deploy LetsDrive (Auto)
+  deploy-auto:
+    name: Deploy LetsDrive (auto)
     runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' &&
+       (github.event.inputs.store == 'all' || github.event.inputs.store == 'auto'))
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: FTP Deploy — wp-content
+      - name: FTP — wp-content (themes, plugins, mu-plugins)
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
-          server:    ${{ secrets.AUTO_FTP_SERVER }}
-          username:  ${{ secrets.AUTO_FTP_USERNAME }}
-          password:  ${{ secrets.AUTO_FTP_PASSWORD }}
+          server:    ${{ secrets.FTP_SERVER }}
+          username:  ${{ secrets.FTP_USERNAME }}
+          password:  ${{ secrets.FTP_PASSWORD }}
           port:      21
           local-dir: ./niches/auto/wp-content/
-          # AUTO_FTP_REMOTE_DIR = the wp-content folder on FastComet for letsdrive.au
           server-dir: ${{ secrets.AUTO_FTP_REMOTE_DIR }}
           dangerous-clean-slate: false
+          log-level: standard
           exclude: |
             **/.git*
             **/.git*/**
@@ -63,4 +171,47 @@ jobs:
             **/upgrade/**
             **/uploads/**
             **/ai-content/**
+            **/ai1wm-backups/**
             **/*.log
+            **/wp-cache-config.php
+            **/advanced-cache.php
+
+      - name: FTP — SQL dump (only when include_db=true)
+        if: github.event.inputs.include_db == 'true'
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server:    ${{ secrets.FTP_SERVER }}
+          username:  ${{ secrets.FTP_USERNAME }}
+          password:  ${{ secrets.FTP_PASSWORD }}
+          port:      21
+          local-dir: ./niches/auto/
+          server-dir: ${{ secrets.AUTO_FTP_SQL_DIR }}
+          dangerous-clean-slate: false
+          exclude: |
+            **/.git*/**
+            **/wp-content/**
+
+      - name: SSH — Import DB + flush cache (only when include_db=true)
+        if: github.event.inputs.include_db == 'true'
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host:     ${{ secrets.FASTCOMET_SSH_HOST }}
+          username: ${{ secrets.FASTCOMET_SSH_USER }}
+          key:      ${{ secrets.FASTCOMET_SSH_KEY }}
+          port:     ${{ secrets.FASTCOMET_SSH_PORT }}
+          script: |
+            set -e
+            cd "${{ secrets.AUTO_STORE_PATH }}"
+
+            echo "=== Importing auto DB ==="
+            mysql \
+              -u"${{ secrets.AUTO_DB_USER }}" \
+              -p"${{ secrets.AUTO_DB_PASS }}" \
+              "${{ secrets.AUTO_DB_NAME }}" \
+              < auto-store.sql
+
+            echo "=== Flushing WP cache ==="
+            if command -v wp &>/dev/null; then
+              wp cache flush --allow-root 2>/dev/null || true
+            fi
+            echo "=== Auto DB import complete ==="

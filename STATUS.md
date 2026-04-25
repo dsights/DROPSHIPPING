@@ -135,12 +135,39 @@ blocking Apache (www-data) from reading it → 500 errors on all pages.
 
 ### Apache Rewrite / wp-json Pretty URLs
 **Problem:** Both stores share `ServerName localhost` in vhost configs. Apache uses the first vhost
-matched (auto.conf alphabetically), so `/pet` URL rewrites only work for `/auto`.
+matched (auto.conf alphabetically), so `/pet` URL rewrites only work for `/auto`. Additionally,
+`apache2.conf` has `AllowOverride None` for `/var/www/`, so `.htaccess` in `/pet` is ignored.
+Result: pet store returns an infinite 301 redirect to itself.
 
-**Workaround:** All API calls use `?rest_route=` fallback (see above). Browser URLs work fine because
-the vhost rewrite rules in the `<Directory>` blocks handle the WP routing.
+**Workaround:** All API calls use `?rest_route=` fallback. Browser auto store works via auto.conf Directory block.
 
-**Permanent fix (requires sudo):** Add WP Directory blocks for both `/pet` and `/auto` to `000-default.conf`.
+**Permanent fix (requires sudo) — script ready at /tmp/fix_apache.sh:**
+```bash
+sudo bash /tmp/fix_apache.sh
+```
+This consolidates both store Directory blocks into `000-default.conf` and disables the conflicting auto.conf + pet.conf vhosts.
+
+### auto store MU plugin missing set_url_scheme filter (RESOLVED — 2026-04-24)
+**Problem:** Auto store's `api-auth-fix.php` set `HTTPS=on` globally but lacked the `set_url_scheme`
+filter. WordPress redirected REST API calls to `https://localhost/auto/` causing report.py to fail.
+
+**Fix:** Added `set_url_scheme` filter to `/var/www/html/auto/wp-content/mu-plugins/api-auth-fix.php`
+(matching what the pet store already had) — converts `https://localhost` back to `http://localhost`.
+
+### report.py WooCommerce API issues (RESOLVED — 2026-04-24)
+**Problem 1:** `httpx.get(api_url(...), params={...})` dropped the `rest_route` from the URL, causing 301 loops.
+**Fix:** Embed all extra params directly in the URL string via `api_url()` argument.
+
+**Problem 2:** `/wc/v3/reports/sales` does not support `period=custom` in WooCommerce 10.x. Returns 400.
+**Fix:** Switched to `/wc/v3/orders?after=...&before=...` and aggregate totals in Python.
+
+### Pet store plugins deactivated (RESOLVED — 2026-04-24)
+**Problem:** All plugins were deactivated (`active_plugins = a:0:{}`), causing WordPress to show the installation screen.
+**Fix:** Re-activated 9 plugins via WP-CLI: woocommerce, stripe, paypal, yoast, wp-super-cache, cf7, astra-sites, mailchimp-for-wc, woo-variation-swatches.
+
+### Pet store .htaccess missing (RESOLVED — 2026-04-24)
+**Problem:** `/var/www/html/pet/.htaccess` did not exist, so WordPress URL rewriting was broken.
+**Fix:** Created `.htaccess` with standard WordPress rewrite rules (RewriteBase /pet/).
 
 ---
 
@@ -165,19 +192,34 @@ the vhost rewrite rules in the `<Directory>` blocks handle the WP routing.
 
 | # | What | Status |
 |---|------|--------|
-| 1 | MixPost install + API token | PENDING — social posting blocked until done |
-| 2 | Test scout.py full run | READY — run `python _common/scout.py pet` |
-| 3 | Test report.py (Telegram CEO report) | READY — run `python _common/report.py` |
-| 4 | Add real product images | PENDING — products currently have no images |
-| 5 | Stripe real API keys (live mode) | DONE ✅ — live keys applied to both stores |
-| 6 | FastComet SSH credentials (both stores) | PENDING — needed for live deploy |
-| 7 | SSH keys generated + uploaded to FastComet | PENDING |
-| 8 | Domain DNS pointed → furlio.au + letsdrive.au | PENDING |
-| 9 | Run sync.sh to deploy both stores live | PENDING — after steps 6-8 done |
+| 1 | Fix Apache vhost conflict (pet store 301 loop) | READY — run `! sudo bash /tmp/fix_apache.sh` |
+| 2 | Telegram bot: send `/start` to bot before reports work | PENDING — user action required |
+| 3 | MixPost install + API token | PENDING — social posting blocked until done |
+| 4 | FastComet SSH credentials (both stores) | PENDING — fill config.json fastcomet section |
+| 5 | SSH keys generated + uploaded to FastComet | PENDING — `ssh-keygen -t rsa -b 4096 -f ~/.ssh/fastcomet_pet_rsa` |
+| 6 | GitHub SSH key for git push | PENDING — git push still failing |
+| 7 | Domain DNS pointed → furlio.au + letsdrive.au | PENDING |
+| 8 | Run sync.sh to deploy both stores live | PENDING — after steps 4-7 done |
 
 ---
 
-## COMPLETED — This Session (2026-04-19)
+## COMPLETED — This Session (2026-04-24)
+
+| # | What Was Done |
+|---|--------------|
+| ✅ | Pet store: re-activated 9 plugins (WooCommerce, Stripe, PayPal, Yoast, WP Super Cache, CF7, Astra Sites, Mailchimp, Variation Swatches) |
+| ✅ | Pet store: created missing `.htaccess` with WordPress rewrite rules |
+| ✅ | Auto store MU plugin: added `set_url_scheme` filter to prevent HTTPS redirect loops in local dev |
+| ✅ | report.py: fixed rest_route URL embedding (httpx dropped param when passed separately) |
+| ✅ | report.py: fixed WooCommerce sales API (switched from /reports/sales to /orders endpoint; period=custom not supported in WC 10.x) |
+| ✅ | Auto store WooCommerce REST API: confirmed 200 OK (both stores working) |
+| ✅ | Product images: confirmed all products have real images (8 pet products, 6 auto products) |
+| ✅ | Apache fix script prepared at /tmp/fix_apache.sh (awaiting sudo to apply) |
+| ✅ | STATUS.md updated with all new debug notes and resolutions |
+
+---
+
+## COMPLETED — Session (2026-04-19)
 
 | # | What Was Done |
 |---|--------------|
