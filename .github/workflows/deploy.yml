@@ -117,28 +117,27 @@ jobs:
 
       - name: SSH — Import DB + flush cache (only when include_db=true)
         if: github.event.inputs.include_db == 'true'
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host:     ${{ secrets.FASTCOMET_SSH_HOST }}
-          username: ${{ secrets.FASTCOMET_SSH_USER }}
-          key:      ${{ secrets.FASTCOMET_SSH_KEY }}
-          port:     ${{ secrets.FASTCOMET_SSH_PORT }}
-          script: |
-            set -e
-            cd "${{ secrets.PET_STORE_PATH }}"
-
-            echo "=== Importing pet DB ==="
-            mysql \
-              -u"${{ secrets.PET_DB_USER }}" \
-              -p"${{ secrets.PET_DB_PASS }}" \
-              "${{ secrets.PET_DB_NAME }}" \
-              < pet-store.sql
-
-            echo "=== Flushing WP cache ==="
-            if command -v wp &>/dev/null; then
-              wp cache flush --allow-root 2>/dev/null || true
-            fi
-            echo "=== Pet DB import complete ==="
+        env:
+          SSH_HOST: ${{ secrets.FASTCOMET_SSH_HOST }}
+          SSH_USER: ${{ secrets.FASTCOMET_SSH_USER }}
+          SSH_PORT: ${{ secrets.FASTCOMET_SSH_PORT }}
+          SSH_KEY:  ${{ secrets.FASTCOMET_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh -i ~/.ssh/deploy_key \
+              -o StrictHostKeyChecking=no \
+              -o ConnectTimeout=30 \
+              -p "${SSH_PORT:-22}" \
+              "${SSH_USER}@${SSH_HOST}" \
+              "set -e
+               cd '${{ secrets.PET_STORE_PATH }}'
+               echo '=== Importing pet DB ==='
+               mysql -u'${{ secrets.PET_DB_USER }}' -p'${{ secrets.PET_DB_PASS }}' '${{ secrets.PET_DB_NAME }}' < pet-store.sql
+               echo '=== Flushing WP cache ==='
+               command -v wp >/dev/null && wp cache flush --allow-root 2>/dev/null || true
+               echo '=== Pet DB import complete ==='"
 
   # ── LetsDrive — Auto Store ──────────────────────────────────────────────────
   deploy-auto:
@@ -193,25 +192,24 @@ jobs:
 
       - name: SSH — Import DB + flush cache (only when include_db=true)
         if: github.event.inputs.include_db == 'true'
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host:     ${{ secrets.FASTCOMET_SSH_HOST }}
-          username: ${{ secrets.FASTCOMET_SSH_USER }}
-          key:      ${{ secrets.FASTCOMET_SSH_KEY }}
-          port:     ${{ secrets.FASTCOMET_SSH_PORT }}
-          script: |
-            set -e
-            cd "${{ secrets.AUTO_STORE_PATH }}"
-
-            echo "=== Importing auto DB ==="
-            mysql \
-              -u"${{ secrets.AUTO_DB_USER }}" \
-              -p"${{ secrets.AUTO_DB_PASS }}" \
-              "${{ secrets.AUTO_DB_NAME }}" \
-              < auto-store.sql
-
-            echo "=== Flushing WP cache ==="
-            if command -v wp &>/dev/null; then
-              wp cache flush --allow-root 2>/dev/null || true
-            fi
-            echo "=== Auto DB import complete ==="
+        env:
+          SSH_HOST: ${{ secrets.FASTCOMET_SSH_HOST }}
+          SSH_USER: ${{ secrets.FASTCOMET_SSH_USER }}
+          SSH_PORT: ${{ secrets.FASTCOMET_SSH_PORT }}
+          SSH_KEY:  ${{ secrets.FASTCOMET_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh -i ~/.ssh/deploy_key \
+              -o StrictHostKeyChecking=no \
+              -o ConnectTimeout=30 \
+              -p "${SSH_PORT:-22}" \
+              "${SSH_USER}@${SSH_HOST}" \
+              "set -e
+               cd '${{ secrets.AUTO_STORE_PATH }}'
+               echo '=== Importing auto DB ==='
+               mysql -u'${{ secrets.AUTO_DB_USER }}' -p'${{ secrets.AUTO_DB_PASS }}' '${{ secrets.AUTO_DB_NAME }}' < auto-store.sql
+               echo '=== Flushing WP cache ==='
+               command -v wp >/dev/null && wp cache flush --allow-root 2>/dev/null || true
+               echo '=== Auto DB import complete ==='"
