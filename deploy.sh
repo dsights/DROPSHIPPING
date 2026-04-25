@@ -52,14 +52,17 @@ echo ""
 [ -f "$PYTHON" ]  || die "venv not found. Run: python3 -m venv venv && venv/bin/pip install -r requirements.txt"
 [ -f "$CONFIG" ]  || die "config.json not found"
 
-# Test GitHub SSH auth
+# Test GitHub SSH auth (ssh -T always exits 1 on GitHub; capture output instead)
 log "Checking GitHub SSH auth..."
-if ! ssh -T git@github.com 2>&1 | grep -q "successfully authenticated"; then
+AUTH_MSG=$(ssh -T git@github.com 2>&1 || true)
+if ! echo "$AUTH_MSG" | grep -q "successfully authenticated"; then
     err "GitHub SSH authentication failed."
+    echo "  Response: $AUTH_MSG"
     echo ""
     echo "  Fix: Add this public key to github.com → Settings → SSH Keys:"
-    echo ""
-    cat ~/.ssh/github_dropshipping.pub 2>/dev/null || echo "  Key not found at ~/.ssh/github_dropshipping.pub"
+    cat /home/dsights/.ssh/github_dropshipping.pub 2>/dev/null || \
+        cat ~/.ssh/github_dropshipping.pub 2>/dev/null || \
+        echo "  Key not found — check ~/.ssh/github_dropshipping.pub"
     echo ""
     exit 1
 fi
