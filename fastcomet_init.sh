@@ -14,15 +14,15 @@
 
 # ── Configuration — fill in passwords or pass as env vars ────────────────────
 PET_DIR="${PET_DIR:-/home/tripxen1/dropshipping/public_html/pet-store}"
-PET_DB_NAME="${PET_DB_NAME:-tripxen1_petdb}"
-PET_DB_USER="${PET_DB_USER:-tripxen1_petuser}"
+PET_DB_NAME="${PET_DB_NAME:-tripxen1_ecom_petdb}"
+PET_DB_USER="${PET_DB_USER:-tripxen1_furlio}"
 PET_DB_PASS="${PET_DB_PASS:-FILL_IN_PET_DB_PASSWORD}"
 PET_LIVE_URL="${PET_LIVE_URL:-https://furlio.au}"
 PET_LOCAL_URL="${PET_LOCAL_URL:-http://localhost/pet}"
 
 AUTO_DIR="${AUTO_DIR:-/home/tripxen1/dropshipping/public_html/auto-store}"
-AUTO_DB_NAME="${AUTO_DB_NAME:-tripxen1_autodb}"
-AUTO_DB_USER="${AUTO_DB_USER:-tripxen1_autouser}"
+AUTO_DB_NAME="${AUTO_DB_NAME:-tripxen1_ecom_autodb}"
+AUTO_DB_USER="${AUTO_DB_USER:-tripxen1_letsdrive}"
 AUTO_DB_PASS="${AUTO_DB_PASS:-FILL_IN_AUTO_DB_PASSWORD}"
 AUTO_LIVE_URL="${AUTO_LIVE_URL:-https://letsdrive.au}"
 AUTO_LOCAL_URL="${AUTO_LOCAL_URL:-http://localhost/auto}"
@@ -80,6 +80,10 @@ setup_store() {
         # Replace any remaining localhost URLs with live domain
         echo "-> URL search-replace: $local_url → $live_url"
         $wp_cmd search-replace "$local_url" "$live_url" --all-tables --quiet --allow-root
+
+        # Flush rewrite rules + regenerate .htaccess (fixes broken links/permalinks)
+        echo "-> Flushing rewrite rules and regenerating .htaccess..."
+        $wp_cmd rewrite flush --hard --allow-root
 
         # Inject Stripe secret key (was scrubbed from SQL for git safety)
         echo ""

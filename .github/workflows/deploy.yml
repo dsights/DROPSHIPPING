@@ -135,8 +135,9 @@ jobs:
                cd '${{ secrets.PET_STORE_PATH }}'
                echo '=== Importing pet DB ==='
                mysql -u'${{ secrets.PET_DB_USER }}' -p'${{ secrets.PET_DB_PASS }}' '${{ secrets.PET_DB_NAME }}' < pet-store.sql
-               echo '=== Flushing WP cache ==='
+               echo '=== Flushing cache + rewrite rules ==='
                command -v wp >/dev/null && wp cache flush --allow-root 2>/dev/null || true
+               command -v wp >/dev/null && wp rewrite flush --hard --allow-root 2>/dev/null || true
                echo '=== Pet DB import complete ==='"
 
   # ── LetsDrive — Auto Store ──────────────────────────────────────────────────
