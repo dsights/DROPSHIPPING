@@ -192,14 +192,13 @@ filter. WordPress redirected REST API calls to `https://localhost/auto/` causing
 
 | # | What | Status |
 |---|------|--------|
-| 1 | Fix Apache vhost conflict (pet store 301 loop) | READY — run `! sudo bash /tmp/fix_apache.sh` |
-| 2 | Telegram bot: send `/start` to bot before reports work | PENDING — user action required |
-| 3 | MixPost install + API token | PENDING — social posting blocked until done |
-| 4 | FastComet SSH credentials (both stores) | PENDING — fill config.json fastcomet section |
-| 5 | SSH keys generated + uploaded to FastComet | PENDING — `ssh-keygen -t rsa -b 4096 -f ~/.ssh/fastcomet_pet_rsa` |
-| 6 | GitHub SSH key for git push | PENDING — git push still failing |
-| 7 | Domain DNS pointed → furlio.au + letsdrive.au | PENDING |
-| 8 | Run sync.sh to deploy both stores live | PENDING — after steps 4-7 done |
+| 1 | GitHub Actions FTP deploy finishes (wp-content both stores) | IN PROGRESS — run id 24920371510 |
+| 2 | SSH into FastComet + run `fastcomet_init.sh` to set up WP core + import DB | PENDING — after FTP completes |
+| 3 | Update Stripe secret key on live server (was scrubbed from SQL for git safety) | PENDING — WP Admin → WooCommerce → Settings → Payments → Stripe |
+| 4 | Point DNS: furlio.au + letsdrive.au → FastComet server IP | PENDING |
+| 5 | Telegram bot: send `/start` to activate Telegram reports | PENDING |
+| 6 | MixPost install + paste API token into config.json | PENDING — social posting blocked |
+| 7 | Fix Apache vhost conflict on local dev (pet store 301 loop) | READY — `! sudo bash /tmp/fix_apache.sh` |
 
 ---
 
