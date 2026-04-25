@@ -124,7 +124,7 @@ jobs:
           SSH_KEY:  ${{ secrets.FASTCOMET_SSH_KEY }}
         run: |
           mkdir -p ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          echo "$SSH_KEY" | base64 -d > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           ssh -i ~/.ssh/deploy_key \
               -o StrictHostKeyChecking=no \
@@ -199,7 +199,7 @@ jobs:
           SSH_KEY:  ${{ secrets.FASTCOMET_SSH_KEY }}
         run: |
           mkdir -p ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          echo "$SSH_KEY" | base64 -d > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           ssh -i ~/.ssh/deploy_key \
               -o StrictHostKeyChecking=no \
