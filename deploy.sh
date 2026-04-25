@@ -131,7 +131,11 @@ if [ "$PUSH_ONLY" = false ]; then
 
             # URL search-replace in the dump file
             sed -i "s|${local_url}|${live_url}|g" "$dump_file"
-            log "DB exported + URL replaced: $dump_file"
+
+            # Scrub sensitive keys — never commit live payment credentials
+            sed -i "s|sk_live_[A-Za-z0-9]*|STRIPE_SECRET_KEY_INJECT_FROM_SERVER|g" "$dump_file"
+            sed -i "s|sk_test_[A-Za-z0-9]*|STRIPE_TEST_KEY_INJECT_FROM_SERVER|g" "$dump_file"
+            log "DB exported + URL replaced + secrets scrubbed: $dump_file"
         fi
     done
 fi
