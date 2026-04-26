@@ -29,6 +29,14 @@ on:
         options:
           - 'false'
           - 'true'
+      fix_urls:
+        description: 'Run URL search-replace only (no DB import). Fixes /pet/ and /auto/ widget links on live server.'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Required GitHub Secrets (set at: repo → Settings → Secrets → Actions):
@@ -159,6 +167,32 @@ jobs:
                command -v wp >/dev/null && wp cache flush --allow-root 2>/dev/null || true
                echo '=== Pet DB import complete ==='"
 
+      - name: SSH — Fix URLs only (when fix_urls=true, no DB import)
+        if: github.event.inputs.fix_urls == 'true'
+        continue-on-error: true
+        env:
+          SSH_HOST: ${{ secrets.FASTCOMET_SSH_HOST }}
+          SSH_USER: ${{ secrets.FASTCOMET_SSH_USER }}
+          SSH_PORT: ${{ secrets.FASTCOMET_SSH_PORT }}
+          SSH_KEY:  ${{ secrets.FASTCOMET_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" | base64 -d > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh -i ~/.ssh/deploy_key \
+              -o StrictHostKeyChecking=no \
+              -o ConnectTimeout=30 \
+              -p "${SSH_PORT:-22}" \
+              "${SSH_USER}@${SSH_HOST}" \
+              "cd '${{ secrets.PET_STORE_PATH }}'
+               echo '=== Fixing absolute URLs ==='
+               command -v wp >/dev/null && wp search-replace 'http://localhost/pet' 'https://furlio.au' --all-tables --quiet --allow-root || true
+               echo '=== Fixing relative /pet/ paths ==='
+               command -v wp >/dev/null && wp search-replace '/pet/' '/' --all-tables --skip-columns=guid --quiet --allow-root || true
+               command -v wp >/dev/null && wp rewrite flush --hard --allow-root 2>/dev/null || true
+               command -v wp >/dev/null && wp cache flush --allow-root 2>/dev/null || true
+               echo '=== Pet: URL fix complete ==='"
+
       - name: SSH — Flush rewrites + cache
         continue-on-error: true
         env:
@@ -276,6 +310,32 @@ jobs:
                command -v wp >/dev/null && wp rewrite flush --hard --allow-root 2>/dev/null || true
                command -v wp >/dev/null && wp cache flush --allow-root 2>/dev/null || true
                echo '=== Auto DB import complete ==='"
+
+      - name: SSH — Fix URLs only (when fix_urls=true, no DB import)
+        if: github.event.inputs.fix_urls == 'true'
+        continue-on-error: true
+        env:
+          SSH_HOST: ${{ secrets.FASTCOMET_SSH_HOST }}
+          SSH_USER: ${{ secrets.FASTCOMET_SSH_USER }}
+          SSH_PORT: ${{ secrets.FASTCOMET_SSH_PORT }}
+          SSH_KEY:  ${{ secrets.FASTCOMET_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" | base64 -d > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh -i ~/.ssh/deploy_key \
+              -o StrictHostKeyChecking=no \
+              -o ConnectTimeout=30 \
+              -p "${SSH_PORT:-22}" \
+              "${SSH_USER}@${SSH_HOST}" \
+              "cd '${{ secrets.AUTO_STORE_PATH }}'
+               echo '=== Fixing absolute URLs ==='
+               command -v wp >/dev/null && wp search-replace 'http://localhost/auto' 'https://letsdrive.au' --all-tables --quiet --allow-root || true
+               echo '=== Fixing relative /auto/ paths ==='
+               command -v wp >/dev/null && wp search-replace '/auto/' '/' --all-tables --skip-columns=guid --quiet --allow-root || true
+               command -v wp >/dev/null && wp rewrite flush --hard --allow-root 2>/dev/null || true
+               command -v wp >/dev/null && wp cache flush --allow-root 2>/dev/null || true
+               echo '=== Auto: URL fix complete ==='"
 
       - name: SSH — Flush rewrites + cache
         continue-on-error: true

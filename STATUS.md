@@ -1,5 +1,5 @@
 # Project Status — Autonomous Dropshipping Empire
-Last updated: 2026-04-20
+Last updated: 2026-04-26
 
 ---
 
@@ -192,13 +192,30 @@ filter. WordPress redirected REST API calls to `https://localhost/auto/` causing
 
 | # | What | Status |
 |---|------|--------|
-| 1 | GitHub Actions FTP deploy finishes (wp-content both stores) | IN PROGRESS — run id 24920371510 |
-| 2 | SSH into FastComet + run `fastcomet_init.sh` to set up WP core + import DB | PENDING — after FTP completes |
+| 1 | GitHub Actions FTP deploy (.htaccess + rewrite flush) | IN PROGRESS — commit 3b22f3a pushed; check Actions tab to confirm |
+| 2 | Fix widget/menu links on live server (/pet/ → / and /auto/ → /) | READY — workflow_dispatch: store=all, fix_urls=true (no DB re-import needed) |
 | 3 | Update Stripe secret key on live server (was scrubbed from SQL for git safety) | PENDING — WP Admin → WooCommerce → Settings → Payments → Stripe |
 | 4 | Point DNS: furlio.au + letsdrive.au → FastComet server IP | PENDING |
 | 5 | Telegram bot: send `/start` to activate Telegram reports | PENDING |
 | 6 | MixPost install + paste API token into config.json | PENDING — social posting blocked |
-| 7 | Fix Apache vhost conflict on local dev (pet store 301 loop) | READY — `! sudo bash /tmp/fix_apache.sh` |
+| 7 | Fix Apache vhost conflict on local dev | DONE ✅ — 000-default.conf only, both stores 200 OK |
+
+---
+
+## COMPLETED — This Session (2026-04-26)
+
+| # | What Was Done |
+|---|--------------|
+| ✅ | Diagnosed 404-on-all-links root cause: missing `.htaccess` at WP store root on live server |
+| ✅ | Created `niches/pet/.htaccess` + `niches/auto/.htaccess` with `RewriteBase /` (domain-root install) |
+| ✅ | deploy.yml: added FTP step to deploy `.htaccess` on every push (both stores) |
+| ✅ | deploy.yml: new always-run SSH step flushes rewrites + cache after every deploy |
+| ✅ | deploy.yml: include_db SSH step now runs `wp search-replace` for both absolute URLs and relative /pet/ → / paths (WP-CLI handles PHP-serialised data correctly; sed was corrupting it) |
+| ✅ | deploy.sh: removed sed URL replacement (was corrupting PHP serialised string-length prefixes); server-side wp search-replace handles this correctly |
+| ✅ | fastcomet_init.sh: added relative-path search-replace so widget/menu links work at domain root |
+| ✅ | Pushed commit 3b22f3a — GitHub Actions deploying .htaccess to live servers now |
+| ✅ | deploy.yml: added `fix_urls` workflow_dispatch option — runs search-replace only (no DB re-import), safe to run on live data |
+| ✅ | Local Apache vhost conflict resolved — only 000-default.conf active, both stores return 200 OK on /shop/ |
 
 ---
 
