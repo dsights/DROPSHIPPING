@@ -129,13 +129,14 @@ if [ "$PUSH_ONLY" = false ]; then
                 --quiet 2>&1 | tee -a "$LOG_FILE" \
                 || { err "DB export failed for $niche"; continue; }
 
-            # URL search-replace in the dump file
-            sed -i "s|${local_url}|${live_url}|g" "$dump_file"
+            # NOTE: URL replacement (local → live) is intentionally NOT done here with sed.
+            # sed on PHP-serialised data corrupts string-length prefixes (e.g. s:20:"..." becomes wrong).
+            # wp search-replace on the server handles serialisation correctly (deploy.yml SSH step).
 
             # Scrub sensitive keys — never commit live payment credentials
             sed -i "s|sk_live_[A-Za-z0-9]*|STRIPE_SECRET_KEY_INJECT_FROM_SERVER|g" "$dump_file"
             sed -i "s|sk_test_[A-Za-z0-9]*|STRIPE_TEST_KEY_INJECT_FROM_SERVER|g" "$dump_file"
-            log "DB exported + URL replaced + secrets scrubbed: $dump_file"
+            log "DB exported + secrets scrubbed: $dump_file (URL fix runs on server via wp search-replace)"
         fi
     done
 fi

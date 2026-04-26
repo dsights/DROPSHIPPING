@@ -38,28 +38,26 @@ on:
 #   FTP_PASSWORD            cPanel/FTP password
 #
 #   PET_FTP_REMOTE_DIR      Remote path to pet wp-content (FTP-root-relative)
-#                           e.g.  /public_html/wp-content/
-#                              or /dropshipping/public_html/pet-store/wp-content/
+#                           e.g.  /dropshipping/public_html/pet-store/wp-content/
 #   AUTO_FTP_REMOTE_DIR     Same for auto store
-#                           e.g.  /dropshipping/public_html/auto-store/wp-content/
 #
-#   PET_FTP_SQL_DIR         Remote path to pet store ROOT (for SQL upload)
+#   PET_FTP_SQL_DIR         Remote path to pet store ROOT (for .htaccess + SQL upload)
 #                           e.g.  /dropshipping/public_html/pet-store/
 #   AUTO_FTP_SQL_DIR        Same for auto store
 #
 #   FASTCOMET_SSH_HOST      SSH hostname (same server as FTP)
 #   FASTCOMET_SSH_USER      SSH username (same as FTP username)
-#   FASTCOMET_SSH_KEY       SSH private key content (generate with ssh-keygen)
+#   FASTCOMET_SSH_KEY       SSH private key content (base64-encoded)
 #   FASTCOMET_SSH_PORT      SSH port — try 22 first, fall back to 21098
 #
 #   PET_STORE_PATH          Absolute path on server: /home/tripxen1/dropshipping/public_html/pet-store
 #   AUTO_STORE_PATH         Absolute path on server: /home/tripxen1/dropshipping/public_html/auto-store
 #
-#   PET_DB_NAME             tripxen1_petdb
-#   PET_DB_USER             tripxen1_petuser
+#   PET_DB_NAME             tripxen1_ecom_petdb
+#   PET_DB_USER             tripxen1_furlio
 #   PET_DB_PASS             DB password for pet store
-#   AUTO_DB_NAME            tripxen1_autodb
-#   AUTO_DB_USER            tripxen1_autouser
+#   AUTO_DB_NAME            tripxen1_ecom_autodb
+#   AUTO_DB_USER            tripxen1_letsdrive
 #   AUTO_DB_PASS            DB password for auto store
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -100,6 +98,23 @@ jobs:
             **/wp-cache-config.php
             **/advanced-cache.php
 
+      - name: FTP — Root files (.htaccess)
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server:    ${{ secrets.FTP_SERVER }}
+          username:  ${{ secrets.FTP_USERNAME }}
+          password:  ${{ secrets.FTP_PASSWORD }}
+          port:      21
+          local-dir: ./niches/pet/
+          server-dir: ${{ secrets.PET_FTP_SQL_DIR }}
+          dangerous-clean-slate: false
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/wp-content/**
+            **/*.sql
+            **/*.php
+
       - name: FTP — SQL dump (only when include_db=true)
         if: github.event.inputs.include_db == 'true'
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
@@ -115,7 +130,7 @@ jobs:
             **/.git*/**
             **/wp-content/**
 
-      - name: SSH — Import DB + flush cache (only when include_db=true)
+      - name: SSH — Import DB + fix URLs + flush (only when include_db=true)
         if: github.event.inputs.include_db == 'true'
         env:
           SSH_HOST: ${{ secrets.FASTCOMET_SSH_HOST }}
@@ -135,10 +150,35 @@ jobs:
                cd '${{ secrets.PET_STORE_PATH }}'
                echo '=== Importing pet DB ==='
                mysql -u'${{ secrets.PET_DB_USER }}' -p'${{ secrets.PET_DB_PASS }}' '${{ secrets.PET_DB_NAME }}' < pet-store.sql
-               echo '=== Flushing cache + rewrite rules ==='
-               command -v wp >/dev/null && wp cache flush --allow-root 2>/dev/null || true
+               echo '=== Fixing absolute URLs (handles serialised data) ==='
+               command -v wp >/dev/null && wp search-replace 'http://localhost/pet' 'https://furlio.au' --all-tables --quiet --allow-root || true
+               echo '=== Fixing relative /pet/ paths in widget/menu content ==='
+               command -v wp >/dev/null && wp search-replace '/pet/' '/' --all-tables --skip-columns=guid --quiet --allow-root || true
+               echo '=== Regenerating rewrite rules + flushing cache ==='
                command -v wp >/dev/null && wp rewrite flush --hard --allow-root 2>/dev/null || true
+               command -v wp >/dev/null && wp cache flush --allow-root 2>/dev/null || true
                echo '=== Pet DB import complete ==='"
+
+      - name: SSH — Flush rewrites + cache
+        continue-on-error: true
+        env:
+          SSH_HOST: ${{ secrets.FASTCOMET_SSH_HOST }}
+          SSH_USER: ${{ secrets.FASTCOMET_SSH_USER }}
+          SSH_PORT: ${{ secrets.FASTCOMET_SSH_PORT }}
+          SSH_KEY:  ${{ secrets.FASTCOMET_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" | base64 -d > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh -i ~/.ssh/deploy_key \
+              -o StrictHostKeyChecking=no \
+              -o ConnectTimeout=30 \
+              -p "${SSH_PORT:-22}" \
+              "${SSH_USER}@${SSH_HOST}" \
+              "cd '${{ secrets.PET_STORE_PATH }}' &&
+               command -v wp >/dev/null && wp rewrite flush --hard --allow-root 2>/dev/null || true &&
+               command -v wp >/dev/null && wp cache flush --allow-root 2>/dev/null || true &&
+               echo '=== Pet: rewrite+cache flushed ==='"
 
   # ── LetsDrive — Auto Store ──────────────────────────────────────────────────
   deploy-auto:
@@ -176,6 +216,23 @@ jobs:
             **/wp-cache-config.php
             **/advanced-cache.php
 
+      - name: FTP — Root files (.htaccess)
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server:    ${{ secrets.FTP_SERVER }}
+          username:  ${{ secrets.FTP_USERNAME }}
+          password:  ${{ secrets.FTP_PASSWORD }}
+          port:      21
+          local-dir: ./niches/auto/
+          server-dir: ${{ secrets.AUTO_FTP_SQL_DIR }}
+          dangerous-clean-slate: false
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/wp-content/**
+            **/*.sql
+            **/*.php
+
       - name: FTP — SQL dump (only when include_db=true)
         if: github.event.inputs.include_db == 'true'
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
@@ -191,7 +248,7 @@ jobs:
             **/.git*/**
             **/wp-content/**
 
-      - name: SSH — Import DB + flush cache (only when include_db=true)
+      - name: SSH — Import DB + fix URLs + flush (only when include_db=true)
         if: github.event.inputs.include_db == 'true'
         env:
           SSH_HOST: ${{ secrets.FASTCOMET_SSH_HOST }}
@@ -211,6 +268,32 @@ jobs:
                cd '${{ secrets.AUTO_STORE_PATH }}'
                echo '=== Importing auto DB ==='
                mysql -u'${{ secrets.AUTO_DB_USER }}' -p'${{ secrets.AUTO_DB_PASS }}' '${{ secrets.AUTO_DB_NAME }}' < auto-store.sql
-               echo '=== Flushing WP cache ==='
+               echo '=== Fixing absolute URLs (handles serialised data) ==='
+               command -v wp >/dev/null && wp search-replace 'http://localhost/auto' 'https://letsdrive.au' --all-tables --quiet --allow-root || true
+               echo '=== Fixing relative /auto/ paths in widget/menu content ==='
+               command -v wp >/dev/null && wp search-replace '/auto/' '/' --all-tables --skip-columns=guid --quiet --allow-root || true
+               echo '=== Regenerating rewrite rules + flushing cache ==='
+               command -v wp >/dev/null && wp rewrite flush --hard --allow-root 2>/dev/null || true
                command -v wp >/dev/null && wp cache flush --allow-root 2>/dev/null || true
                echo '=== Auto DB import complete ==='"
+
+      - name: SSH — Flush rewrites + cache
+        continue-on-error: true
+        env:
+          SSH_HOST: ${{ secrets.FASTCOMET_SSH_HOST }}
+          SSH_USER: ${{ secrets.FASTCOMET_SSH_USER }}
+          SSH_PORT: ${{ secrets.FASTCOMET_SSH_PORT }}
+          SSH_KEY:  ${{ secrets.FASTCOMET_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" | base64 -d > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh -i ~/.ssh/deploy_key \
+              -o StrictHostKeyChecking=no \
+              -o ConnectTimeout=30 \
+              -p "${SSH_PORT:-22}" \
+              "${SSH_USER}@${SSH_HOST}" \
+              "cd '${{ secrets.AUTO_STORE_PATH }}' &&
+               command -v wp >/dev/null && wp rewrite flush --hard --allow-root 2>/dev/null || true &&
+               command -v wp >/dev/null && wp cache flush --allow-root 2>/dev/null || true &&
+               echo '=== Auto: rewrite+cache flushed ==='"

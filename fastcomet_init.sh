@@ -77,9 +77,14 @@ setup_store() {
         echo "-> Importing database from $sql_file..."
         $wp_cmd db import "$sql_file" --allow-root
 
-        # Replace any remaining localhost URLs with live domain
+        # Replace localhost absolute URLs — WP-CLI handles PHP serialised data correctly
         echo "-> URL search-replace: $local_url → $live_url"
         $wp_cmd search-replace "$local_url" "$live_url" --all-tables --quiet --allow-root
+
+        # Fix relative subdirectory paths hardcoded in widget/menu HTML (e.g. /pet/shop/ → /shop/)
+        local_subdir=$(basename "$dir")
+        echo "-> Relative path fix: /${local_subdir}/ → /"
+        $wp_cmd search-replace "/${local_subdir}/" "/" --all-tables --skip-columns=guid --quiet --allow-root
 
         # Flush rewrite rules + regenerate .htaccess (fixes broken links/permalinks)
         echo "-> Flushing rewrite rules and regenerating .htaccess..."
